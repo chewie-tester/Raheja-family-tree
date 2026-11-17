@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Family tree</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600&family=Newsreader:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tree.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>Family tree</h1>
+    <input id="search" type="search" list="people-list" placeholder="Find a person" aria-label="Find a person" autocomplete="off">
+    <datalist id="people-list"></datalist>
+    <span class="hint">Select any card to center the tree on that person.</span>
+    <span id="count" class="count"></span>
+  </header>
+
+  <section id="message" class="message" hidden>
+    <h2 id="message-title"></h2>
+    <p id="message-body"></p>
+    <p id="file-picker" hidden>
+      <label>Open the exported file instead:
+        <input id="files" type="file" multiple accept=".xlsx,.csv">
+      </label>
+    </p>
+  </section>
+
+  <main id="viewport">
+    <div id="stage"></div>
+  </main>
+
+  <!-- Phase 1 modules, unchanged. validate.js is loaded only in case indexer.js uses parseDate; it is never run here. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="config.js"></script>
+  <script src="loader.js"></script>
+  <script src="indexer.js"></script>
+  <script src="validate.js"></script>
+  <!-- Phase 2 -->
+  <script src="tree.js"></script>
+  <script>
+    (function () {
+      function show(title, body, picker) {
+        document.getElementById('message-title').textContent = title;
+        document.getElementById('message-body').textContent = body;
+        document.getElementById('file-picker').hidden = !picker;
+        document.getElementById('message').hidden = false;
+      }
+
+      // Accepts an index directly, or { people, unions }, or [people, unions].
+      function toIndex(res) {
+        if (res && res.peopleById) return res;
+        if (res && res.index && res.index.peopleById) return res.index;
+        var people = res && (res.people || res[0]);
+        var unions = res && (res.unions || res[1]);
+        return buildIndex(people, unions);
+      }
+
+      function begin(idx) {
+        window.familyIndex = idx;
+        document.getElementById('message').hidden = true;
+        FamilyTree.start(idx);
+      }
+
+      async function boot() {
+        try {
+          begin(window.familyIndex || toIndex(await Loader.loadFromSheet()));
+        } catch (err) {
+          show('The sheet could not be loaded',
+               (err && err.message ? err.message + ' ' : '') +
+               'Check that the sheet is shared as \u201CAnyone with the link can view\u201D, or open an exported copy below.',
+               true);
+        }
+      }
+
+      document.getElementById('files').addEventListener('change', async function (e) {
+        try { begin(toIndex(await Loader.loadFromFiles(e.target.files))); }
+        catch (err) { show('That file could not be read', err && err.message ? err.message : '', true); }
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
