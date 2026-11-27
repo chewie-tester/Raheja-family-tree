@@ -38,8 +38,8 @@
 <body>
 <h1>Family Tree: data check (Phase 1)</h1>
 <div class="bar">
-  <button id="reload">Load from Google Sheet</button>
-  <label class="btn">Choose file(s)…<input id="file" type="file" multiple accept=".xlsx,.xls,.csv"></label>
+  <button id="reload">Open Google Sheet link…</button>
+  <label class="btn">Choose Excel file…<input id="file" type="file" accept=".xlsx"></label>
 </div>
 <div id="status">Starting…</div>
 <div id="out"></div>
@@ -97,9 +97,9 @@ function render({ findings, counts, stats, gens }) {
   $("out").innerHTML = h;
 }
 
-$("reload").onclick = () => run(Loader.loadFromSheet);
+$("reload").onclick = () => { const link = prompt("Paste the Google Sheet link (shared as Anyone with the link can view):"); if (link) run(() => Loader.loadFromLink(link)); };
 $("file").onchange = (e) => e.target.files.length && run(() => Loader.loadFromFiles([...e.target.files]));
-run(Loader.loadFromSheet);
+status("Choose an Excel file or open a Google Sheet link to begin.");
 </script>
 </body>
 </html>

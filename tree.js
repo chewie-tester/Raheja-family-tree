@@ -1,10 +1,14 @@
 /*
- * Phase 2: tree view.
+ * Tree view.
  *
  * Reads window.familyIndex (only peopleById and unionsById) and draws a
- * classic hierarchy centered on one person. It never writes to the sheet and
- * never displays dob, dod, sex, notes or source_text. dob is read only to put
- * siblings in birth order.
+ * classic hierarchy centered on one person. It never writes to the file or
+ * sheet. The app holds no family data of its own: everything shown comes from
+ * the file the person chose, read in their browser and kept only in memory.
+ *
+ * Cards show names and marriage date. Selecting a person also fills a detail
+ * panel with person_id, DOB, DOD and notes. sex and source_text are never shown.
+ * dob is also used to put siblings in birth order.
  *
  * Layout:
  *   row 1  parents (one couple, or a note when they are not on the tree)
@@ -13,7 +17,7 @@
  *   row 3  children, grouped by union
  *
  * Clicking a card sets the URL hash to that person_id, which re-centers the
- * tree. Back/forward and bookmarks work, and a refresh keeps your place.
+ * tree. Back/forward work within a visit. Nothing is stored between visits.
  */
 (function () {
   'use strict';
@@ -146,8 +150,41 @@
 
   function upNote(p) {
     if (str(p.tree_role).toLowerCase() === 'spouse') return 'Family of origin not recorded';
-    if (str(p.parent_union_id)) return 'Parents not found in the sheet';
+    if (str(p.parent_union_id)) return 'Parents not found in the file';
     return 'Earlier generations not added yet';
+  }
+
+  /* ---------- detail panel ---------- */
+
+  function detailRow(label, value) {
+    var row = el('div', 'detail-row');
+    row.appendChild(el('dt', null, label));
+    var dd = el('dd', value ? null : 'none', value || 'Not recorded');
+    row.appendChild(dd);
+    return row;
+  }
+
+  function showDetail(p) {
+    var box = $('#detail');
+    if (!box) return;
+    box.replaceChildren();
+    if (!p) { box.hidden = true; return; }
+    box.appendChild(el('h2', 'detail-name', plainName(p)));
+    var maiden = str(p.maiden_name), last = str(p.last_name);
+    if (maiden && maiden.toLowerCase() !== last.toLowerCase()) box.appendChild(el('p', 'detail-sub', 'n\u00E9e ' + maiden));
+
+    var dl = el('dl', 'detail-list');
+    dl.appendChild(detailRow('Person ID', str(p.person_id)));
+    dl.appendChild(detailRow('Born', fmtDate(p.dob)));
+    dl.appendChild(detailRow('Died', fmtDate(p.dod)));
+    box.appendChild(dl);
+
+    var notes = str(p.notes);
+    var nb = el('div', 'detail-notes');
+    nb.appendChild(el('h3', null, 'Notes'));
+    nb.appendChild(el('p', notes ? null : 'none', notes || 'Not recorded'));
+    box.appendChild(nb);
+    box.hidden = false;
   }
 
   /* ---------- render ---------- */
@@ -192,8 +229,9 @@
     stage.replaceChildren();
     pending = [];
     var p = M.byId.get(pid);
-    if (!p) { stage.appendChild(el('p', 'empty', 'That person is not in the sheet.')); return; }
+    if (!p) { stage.appendChild(el('p', 'empty', 'That person is not in the file.')); showDetail(null); return; }
     focusId = pid;
+    showDetail(p);
     document.title = plainName(p) + ' \u2013 Family tree';
 
     var svg = document.createElementNS(NS, 'svg');
@@ -306,25 +344,32 @@
     return base;
   }
 
+  var searchLookup = new Map();
+  var searchBound = false;
+
   function fillSearch() {
     var counts = {};
     M.people.forEach(function (p) { var n = plainName(p); counts[n] = (counts[n] || 0) + 1; });
     var list = $('#people-list');
-    var lookup = new Map();
+    searchLookup = new Map();
     list.replaceChildren();
     M.people.forEach(function (p) {
       var label = searchLabel(p, counts);
-      if (lookup.has(label)) label += ' #' + (lookup.size + 1);
-      lookup.set(label, str(p.person_id));
+      if (searchLookup.has(label)) label += ' #' + (searchLookup.size + 1);
+      searchLookup.set(label, str(p.person_id));
       var o = document.createElement('option');
       o.value = label;
       list.appendChild(o);
     });
     var input = $('#search');
-    input.addEventListener('change', function () {
-      var id = lookup.get(input.value);
-      if (id) { go(id); input.value = ''; input.blur(); }
-    });
+    input.value = '';
+    if (!searchBound) {
+      searchBound = true;
+      input.addEventListener('change', function () {
+        var id = searchLookup.get(input.value);
+        if (id) { go(id); input.value = ''; input.blur(); }
+      });
+    }
   }
 
   /* ---------- routing and start ---------- */
@@ -349,7 +394,24 @@
     render(M.byId.has(h) ? h : defaultStart());
   }
 
+  // Forget everything loaded: used by "Choose a different file".
+  function reset() {
+    M = null;
+    pending = [];
+    focusId = null;
+    searchLookup = new Map();
+    $('#stage').replaceChildren();
+    $('#people-list').replaceChildren();
+    $('#search').value = '';
+    $('#count').textContent = '';
+    showDetail(null);
+    window.familyIndex = null;
+    document.title = 'Family tree';
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  }
+
   function start(idx) {
+    window.familyIndex = idx;
     M = buildModel(idx);
     $('#count').textContent = M.people.length + ' people';
     fillSearch();
@@ -364,5 +426,5 @@
     if (card) go(card.dataset.pid);
   });
 
-  window.FamilyTree = { start: start, render: render, redraw: draw, get focusId() { return focusId; } };
+  window.FamilyTree = { start: start, reset: reset, render: render, redraw: draw, get focusId() { return focusId; } };
 })();

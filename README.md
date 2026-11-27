@@ -1,112 +1,73 @@
-# Family Tree
+# Family Tree Viewer
 
-A small static web app that shows a family's lineage from a Google Sheet. The sheet is the single source of truth: the app only reads from it and never writes anything back.
+A small web page that shows a family tree from a spreadsheet. You choose the file each time you open it; the page itself contains no family data.
 
-There is no build step, no database, no server, and no AI calls at runtime. It is plain HTML and JavaScript that can be hosted for free on GitHub Pages.
+## How to use
 
-## Status
-
-| Phase | What it adds | Status |
-| --- | --- | --- |
-| 1 | Load the data, build the index, show a validation report | Built |
-| 2 | Tree view with click navigation (up, down, across) and person cards | Next |
-| 3 | Refresh button, debug toggle, gap highlighting, mobile layout | Planned |
+1. Open the page. It always starts on **Choose your family tree file**.
+2. Pick one of two options:
+   - **Excel file on this computer:** an `.xlsx` file with `People` and `Unions` tabs.
+   - **Google Sheet:** paste the sheet's link. The sheet must be shared as **Anyone with the link can view**.
+3. The tree opens centered on one person. Select any card to center the tree on that person (parents above, siblings and partners beside, children below).
+4. Selecting a person also shows their person ID, birth date, death date and notes in a panel under the header.
+5. Use **Find a person** to jump to anyone by name.
+6. Use **Choose a different file** to go back to the start screen.
 
 ## Privacy
 
-This is a public app, so the tree view is designed to show only:
+- The page and this repository contain **no family data**.
+- The file you choose is read **in your own browser**. It is not uploaded, sent to a server, saved or remembered. Closing or reloading the page forgets it.
+- A Google Sheet link only works if the sheet is shared with "Anyone with the link". Anyone who has that link can open the sheet itself, so for sensitive data share the Excel file instead.
+- The app only reads. It never changes your file or sheet.
+- Sex and source text columns are never shown.
 
-- first name, last name, and maiden name
-- marriage date, when one is recorded
+## What the file needs
 
-It does **not** show age, date of birth, or date of death, and gender is never shown.
+Two tabs named exactly `People` and `Unions`.
 
-Two things to be aware of:
+**People** columns used:
 
-- The app loads the sheet's People tab in the visitor's browser. Hiding a column on the cards does not remove it from the data the page downloads. For a site that must not expose dates at all, publish a sheet or export with the date columns removed.
-- The Phase 1 data-check page (`index.html` today) can display dates inside some findings. It is intended for the owner's own checking and is not the public view.
+`person_id, generation, first_name, last_name, maiden_name, dob, dod, tree_role, parent_union_id, notes`
 
-The sheet ID is set in `config.js`. If the sheet is shared as "Anyone with the link can view", anyone who finds that ID can open it, so keep that in mind when choosing the repository's visibility.
+- `person_id` is a permanent ID such as P001.
+- `tree_role` is `lineage` (the line of descent) or `spouse` (married in).
+- `parent_union_id` links a lineage person to their parents' row in Unions.
+- `dob` and `dod` are text: `YYYY-MM-DD`, `YYYY-MM`, `YYYY`, or `--MM-DD` when only month and day are known. Blank means unknown.
+
+**Unions** columns used:
+
+`union_id, person1_id, person2_id, marriage_date`
+
+- `person1_id` is the lineage partner and `person2_id` is the married-in spouse.
+
+Other columns in the file are ignored.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | Page shell, buttons, status line, and the validation report |
-| `config.js` | Sheet ID and tab names (the only file you normally edit) |
-| `loader.js` | Loads People and Unions from the live sheet (CSV) or from files you pick |
-| `indexer.js` | Builds the in-memory index: people and unions by ID, parents, spouses, children, siblings, ancestors, descendants |
-| `validate.js` | Runs the checks and returns the findings |
+| `index.html` | The page, including the start screen |
+| `tree.js` | Tree drawing, search, navigation, detail panel |
+| `tree.css` | Styles |
+| `config.js` | Tab names and the Google Sheet address builder |
+| `loader.js` | Reads the chosen Excel file or Google Sheet link |
+| `indexer.js` | Builds the people and union lookups |
+| `validate.js` | Date parsing helper used by the indexer |
 
-Two libraries load from cdnjs: PapaParse 5.4.1 (CSV) and SheetJS 0.18.5 (`.xlsx`).
+No build step. Two libraries load from cdnjs when the page opens: PapaParse (CSV) and SheetJS (Excel). Fonts load from Google Fonts.
 
-## How the data is organized
+## Publishing on GitHub Pages
 
-The app reads two tabs, `People` and `Unions`.
+1. Create a repository and upload the files above. Upload `tree.html` as **`index.html`**.
+2. Do **not** upload any spreadsheet or other data file.
+3. In the repository, go to **Settings, Pages**, choose **Deploy from a branch**, select the `main` branch and the root folder, then save.
+4. After a minute or two the site is live at `https://<username>.github.io/<repository-name>/`.
 
-- **People:** one row per person, with `person_id`, `generation`, `first_name`, `last_name`, `maiden_name`, `tree_role`, and `parent_union_id`, among other columns.
-- **Unions:** one row per couple, with `union_id`, `person1_id`, `person2_id`, `marriage_date`, and a `children` count.
+## Trying it on your own computer
 
-How relationships work:
+Open `index.html` in a browser. If your browser blocks the Google Sheet option from a local file, run a tiny local server from the folder instead (for example `python3 -m http.server`) and open `http://localhost:8000`.
 
-- A person with `tree_role` = `lineage` has a `parent_union_id` that points to their parents in the Unions tab. Lineage people with no `parent_union_id` are the roots of the tree.
-- A person with `tree_role` = `spouse` married into the family. They show no parents, only the couple and any children.
-- In each union, `person1_id` is the lineage partner and `person2_id` is the married-in spouse.
-- Missing information (for example a missing spouse or an unnamed child) is shown as a gap and never hidden.
+## Planned
 
-## Running it
-
-### Locally
-
-Open `index.html` in a browser. If the live sheet is not reachable, use **Choose file(s)…** and pick either:
-
-- one `.xlsx` file that has `People` and `Unions` tabs, or
-- the People and Unions tabs exported as two separate `.csv` files.
-
-### On GitHub Pages
-
-1. Put the files in a repository.
-2. Go to **Settings → Pages**.
-3. Under **Build and deployment**, choose **Deploy from a branch**, pick your branch (for example `main`) and the folder that holds `index.html`, then save.
-4. After a minute or so the site is live at the URL GitHub shows on that page.
-
-### Live sheet access
-
-**Load from Google Sheet** reads the two tabs as CSV, which requires the sheet to be shared as "Anyone with the link can view". If the sheet is private, the page says so and the file picker still works. A private-sheet option (a small serverless proxy with a service account) is a possible later step.
-
-## What the validation report checks
-
-Findings are grouped by check and sorted by severity.
-
-**Errors** (the data is broken)
-
-- Missing or duplicate `person_id` or `union_id`
-- A `parent_union_id` that does not exist in Unions
-- A union partner that does not exist in People, or a union with no first partner
-- A union where both partners are the same person
-- A person who is their own ancestor
-
-**Warnings** (probably wrong, worth a look)
-
-- `tree_role` not `lineage` or `spouse`, or an unreadable `generation`
-- A spouse who has parents, or a spouse who is in no union
-- A lineage root that is not in the earliest generation
-- A union whose partners are in the wrong roles or different generations
-- A child whose generation is not one more than their parents'
-- A `children` count in Unions that does not match the people pointing at that union
-- An invalid date, or a death date before a birth date
-
-**Gaps** (information missing in the source; kept as gaps)
-
-- No first name, no last name, or no birth date
-- A date with a month and day but no year
-- A union with no second partner
-
-**Info**
-
-- The lineage roots, and anyone who is a partner in more than one union
-
-## Notes
-
-- Nothing is stored or sent anywhere. The data is read, indexed in memory, and shown on the page.
-- After a successful load, the index and report are available in the browser console as `familyIndex` and `familyReport`, which the tree view will use.
+- Pick two people and show visually how they are related.
+- Sign in with Google to open sheets shared with you by name.
