@@ -24,15 +24,80 @@
   async function fetchCsv(url) {
     let res;
     try {
-      res = await fetch(url, { cache: "no-store" });
+      res = await fetch(url);
     } catch (e) {
-      throw new Error("The sheet could not be reached. Check the link and your internet connection.");
+      const err = new Error("The sheet could not be reached.");
+      err.unreachable = true;
+      throw err;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status} while reading the sheet.`);
     const text = await res.text();
     if (text.trimStart().startsWith("<"))
       throw new Error('The sheet returned a web page instead of data. It is probably not shared as "Anyone with the link can view".');
     return parseCsv(text);
+  }
+
+  // Turns a Google "gviz" JSON table into the same row objects the CSV path produces.
+  function tableToRows(table) {
+    const cols = (table.cols || []).map((c) => String(c.label || "").trim());
+    if (!cols.some(Boolean)) throw new Error("The sheet's header row could not be read.");
+    const rows = (table.rows || []).map((r) => {
+      const o = {};
+      (r.c || []).forEach((cell, i) => {
+        if (!cols[i]) return;
+        o[cols[i]] = cell && cell.v != null ? String(cell.v) : "";
+      });
+      for (const c of cols) if (c && !(c in o)) o[c] = "";
+      return o;
+    });
+    return clean(rows.filter((r) => Object.values(r).some((v) => v !== "")));
+  }
+
+  // Fallback that loads the data through a <script> tag, which browsers allow across sites
+  // (no CORS restriction). Used only if the normal request is blocked.
+  function fetchViaScript(sheetId, tab) {
+    return new Promise((resolve, reject) => {
+      const cb = "__gviz_" + Math.random().toString(36).slice(2);
+      const tag = document.createElement("script");
+      let done = false;
+      const finish = (fn, val) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+        tag.remove();
+        fn(val);
+      };
+      const timer = setTimeout(() => finish(reject, new Error("The sheet took too long to respond.")), 20000);
+      window[cb] = (resp) => {
+        if (!resp || resp.status !== "ok") {
+          const msg = resp && resp.errors && resp.errors[0] && resp.errors[0].detailed_message;
+          return finish(reject, new Error("Google would not return the sheet" + (msg ? ": " + msg : ".")));
+        }
+        try { finish(resolve, tableToRows(resp.table)); }
+        catch (e) { finish(reject, e); }
+      };
+      tag.onerror = () => finish(reject, new Error("The sheet could not be reached."));
+      tag.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json;responseHandler:${cb}&headers=1&sheet=${encodeURIComponent(tab)}`;
+      document.head.appendChild(tag);
+    });
+  }
+
+  // Normal request first; if the browser blocks it, try the script method.
+  async function loadTab(sheetId, tab) {
+    try {
+      return await fetchCsv(CONFIG.csvUrl(sheetId, tab));
+    } catch (e) {
+      if (!e.unreachable) throw e;
+      try {
+        return await fetchViaScript(sheetId, tab);
+      } catch (e2) {
+        throw new Error(
+          "The sheet could not be reached. Check the link and that it is a Google Sheet (not an uploaded Excel file) shared as " +
+          "\u201CAnyone with the link can view\u201D. If it is, an ad blocker or privacy extension may be blocking the request."
+        );
+      }
+    }
   }
 
   // Pulls the sheet ID out of a Google Sheets address (or accepts a bare ID).
@@ -48,8 +113,8 @@
     const id = sheetIdFromLink(link);
     if (!id) throw new Error("That does not look like a Google Sheets link. It should start with https://docs.google.com/spreadsheets/d/");
     const [p, u] = await Promise.all([
-      fetchCsv(CONFIG.csvUrl(id, CONFIG.peopleTab)),
-      fetchCsv(CONFIG.csvUrl(id, CONFIG.unionsTab)),
+      loadTab(id, CONFIG.peopleTab),
+      loadTab(id, CONFIG.unionsTab),
     ]);
     return { people: require_(p, PEOPLE_COLS, "People"), unions: require_(u, UNION_COLS, "Unions"), source: "Google Sheet link" };
   }
@@ -66,5 +131,5 @@
     return { people: require_(toRows(ps), PEOPLE_COLS, "People"), unions: require_(toRows(us), UNION_COLS, "Unions"), source: "Excel file" };
   }
 
-  root.Loader = { loadFromLink, loadFromFiles, sheetIdFromLink };
+  root.Loader = { loadFromLink, loadFromFiles, sheetIdFromLink, tableToRows };
 })(typeof window !== "undefined" ? window : globalThis);
