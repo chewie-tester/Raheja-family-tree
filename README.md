@@ -9,7 +9,7 @@ A small web page that shows a family tree from a spreadsheet. You choose the fil
    - **Excel file on this computer:** an `.xlsx` file with `People` and `Unions` tabs.
    - **Google Sheet:** paste the sheet's link. The sheet must be shared as **Anyone with the link can view**.
 3. The tree opens centered on one person. Select any card to center the tree on that person (parents above, siblings and partners beside, children below).
-4. Selecting a person also shows their person ID, birth date, death date and notes in a panel under the header.
+4. Select the centered person again to open a side panel with their person ID, birth date, death date, marriage date(s) and notes. Click anywhere else, or press Esc, to close it.
 5. Use **Find a person** to jump to anyone by name.
 6. Use **Choose a different file** to go back to the start screen.
 

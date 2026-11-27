@@ -6,8 +6,9 @@
  * sheet. The app holds no family data of its own: everything shown comes from
  * the file the person chose, read in their browser and kept only in memory.
  *
- * Cards show names and marriage date. Selecting a person also fills a detail
- * panel with person_id, DOB, DOD and notes. sex and source_text are never shown.
+ * Cards show names only. Selecting the already-selected person opens a side
+ * panel with person_id, DOB, DOD, marriage date(s) and notes. sex and
+ * source_text are never shown.
  * dob is also used to put siblings in birth order.
  *
  * Layout:
@@ -17,7 +18,7 @@
  *   row 3  children, grouped by union
  *
  * Clicking a card sets the URL hash to that person_id, which re-centers the
- * tree. Back/forward work within a visit. Nothing is stored between visits.
+ * tree and closes the side panel; clicking the selected card again toggles it. Back/forward work within a visit. Nothing is stored between visits.
  */
 (function () {
   'use strict';
@@ -113,16 +114,6 @@
     return n || 'Unnamed';
   }
 
-  function marriageText(pid, hint) {
-    if (hint) return fmtDate(hint.marriage_date);
-    var us = M.unionsOf.get(pid) || [];
-    for (var i = 0; i < us.length; i++) {
-      var d = fmtDate(us[i].marriage_date);
-      if (d) return d;
-    }
-    return '';
-  }
-
   function makeCard(p, kind, hintUnion) {
     var pid = str(p.person_id);
     var role = str(p.tree_role).toLowerCase() === 'spouse' ? 'spouse' : 'lineage';
@@ -139,8 +130,6 @@
     b.appendChild(name);
 
     if (maiden && maiden.toLowerCase() !== last.toLowerCase()) b.appendChild(el('span', 'sub', 'née ' + maiden));
-    var m = marriageText(pid, hintUnion);
-    if (m) b.appendChild(el('span', 'sub', 'm. ' + m));
 
     b.setAttribute('aria-label', plainName(p) + (kind === 'focus' ? ' (selected)' : ': show this person\u2019s tree'));
     return b;
@@ -154,29 +143,42 @@
     return 'Earlier generations not added yet';
   }
 
-  /* ---------- detail panel ---------- */
+  /* ---------- detail panel (side bar) ---------- */
+
+  var panelOpen = false;
 
   function detailRow(label, value) {
     var row = el('div', 'detail-row');
     row.appendChild(el('dt', null, label));
-    var dd = el('dd', value ? null : 'none', value || 'Not recorded');
-    row.appendChild(dd);
+    row.appendChild(el('dd', value ? null : 'none', value || 'Not recorded'));
     return row;
   }
 
-  function showDetail(p) {
+  function fillDetail(p) {
     var box = $('#detail');
-    if (!box) return;
     box.replaceChildren();
-    if (!p) { box.hidden = true; return; }
+    var pid = str(p.person_id);
+
+    var close = el('button', 'detail-close', 'Close');
+    close.type = 'button';
+    close.id = 'detail-close';
+    close.setAttribute('aria-label', 'Close details');
+    close.addEventListener('click', function () { closePanel(true); });
+    box.appendChild(close);
+
     box.appendChild(el('h2', 'detail-name', plainName(p)));
     var maiden = str(p.maiden_name), last = str(p.last_name);
     if (maiden && maiden.toLowerCase() !== last.toLowerCase()) box.appendChild(el('p', 'detail-sub', 'n\u00E9e ' + maiden));
 
     var dl = el('dl', 'detail-list');
-    dl.appendChild(detailRow('Person ID', str(p.person_id)));
+    dl.appendChild(detailRow('Person ID', pid));
     dl.appendChild(detailRow('Born', fmtDate(p.dob)));
     dl.appendChild(detailRow('Died', fmtDate(p.dod)));
+    (M.unionsOf.get(pid) || []).forEach(function (u) {
+      var partner = M.byId.get(otherIn(u, pid));
+      var who = partner ? plainName(partner) : 'Partner not recorded';
+      dl.appendChild(detailRow('Married', who + ' (' + (fmtDate(u.marriage_date) || 'date not recorded') + ')'));
+    });
     box.appendChild(dl);
 
     var notes = str(p.notes);
@@ -184,7 +186,30 @@
     nb.appendChild(el('h3', null, 'Notes'));
     nb.appendChild(el('p', notes ? null : 'none', notes || 'Not recorded'));
     box.appendChild(nb);
-    box.hidden = false;
+  }
+
+  function openPanel() {
+    var p = M && M.byId.get(focusId);
+    var box = $('#detail');
+    if (!p || !box) return;
+    fillDetail(p);
+    box.classList.add('open');
+    box.setAttribute('aria-hidden', 'false');
+    panelOpen = true;
+    var c = $('#detail-close');
+    if (c) c.focus();
+  }
+
+  function closePanel(returnFocus) {
+    var box = $('#detail');
+    if (!box) return;
+    box.classList.remove('open');
+    box.setAttribute('aria-hidden', 'true');
+    if (panelOpen && returnFocus) {
+      var card = $('#stage .card.focus');
+      if (card) card.focus();
+    }
+    panelOpen = false;
   }
 
   /* ---------- render ---------- */
@@ -229,9 +254,9 @@
     stage.replaceChildren();
     pending = [];
     var p = M.byId.get(pid);
-    if (!p) { stage.appendChild(el('p', 'empty', 'That person is not in the file.')); showDetail(null); return; }
+    if (!p) { stage.appendChild(el('p', 'empty', 'That person is not in the file.')); closePanel(); return; }
     focusId = pid;
-    showDetail(p);
+    closePanel();
     document.title = plainName(p) + ' \u2013 Family tree';
 
     var svg = document.createElementNS(NS, 'svg');
@@ -404,7 +429,8 @@
     $('#people-list').replaceChildren();
     $('#search').value = '';
     $('#count').textContent = '';
-    showDetail(null);
+    closePanel();
+    $('#detail').replaceChildren();
     window.familyIndex = null;
     document.title = 'Family tree';
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -422,9 +448,19 @@
   window.addEventListener('resize', function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(draw, 120); });
   window.addEventListener('hashchange', route);
   document.addEventListener('click', function (e) {
-    var card = e.target.closest && e.target.closest('#stage .card');
-    if (card) go(card.dataset.pid);
+    var t = e.target;
+    var card = t.closest && t.closest('#stage .card');
+    if (card) {
+      if (card.dataset.pid === focusId) { if (panelOpen) closePanel(); else openPanel(); }
+      else go(card.dataset.pid);
+      return;
+    }
+    if (t.closest && t.closest('#detail')) return;
+    closePanel();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && panelOpen) closePanel(true);
   });
 
-  window.FamilyTree = { start: start, reset: reset, render: render, redraw: draw, get focusId() { return focusId; } };
+  window.FamilyTree = { start: start, reset: reset, render: render, redraw: draw, closePanel: closePanel, get focusId() { return focusId; } };
 })();

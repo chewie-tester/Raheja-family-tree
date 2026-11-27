@@ -15,7 +15,7 @@
     <span id="tools" class="tools" hidden>
       <input id="search" type="search" list="people-list" placeholder="Find a person" aria-label="Find a person" autocomplete="off">
       <datalist id="people-list"></datalist>
-      <span class="hint">Select any card to center the tree on that person.</span>
+      <span class="hint">Select a card to center the tree on that person. Select it again for details.</span>
       <button id="change-file" type="button" class="link-button">Choose a different file</button>
     </span>
     <span id="count" class="count"></span>
@@ -47,8 +47,8 @@
     <p id="start-busy" class="start-busy" hidden>Loading&hellip;</p>
   </section>
 
-  <!-- Details for the selected person. Filled from the chosen file only. -->
-  <section id="detail" class="detail" aria-live="polite" hidden></section>
+  <!-- Side bar with details for the selected person. Opens when the selected card is clicked again. Filled from the chosen file only. -->
+  <section id="detail" class="detail" aria-live="polite" aria-hidden="true"></section>
 
   <main id="viewport" hidden>
     <div id="stage"></div>
@@ -76,7 +76,6 @@
       function showStart() {
         $('start').hidden = false;
         $('tools').hidden = true;
-        $('detail').hidden = true;
         $('viewport').hidden = true;
         $('count').textContent = '';
       }
